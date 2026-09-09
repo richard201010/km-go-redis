@@ -128,7 +128,7 @@ km-go-redis 是 Redis 8.10 的**逐模块架构级纯 Go 复刻**。原始 C 源
 ### 编译
 
 ```bash
-git clone http://www.kemaos.com:3000/wanglch/km-go-redis.git
+git clone http://.../km-go-redis.git
 cd km-go-redis
 go build -o km-go-redis-server ./cmd/redis-server/
 ```
@@ -254,7 +254,7 @@ km-go-redis/
 | **并发模型** | goroutine M:N | tokio async |
 | **内存管理** | GC 托管 | 零 GC |
 | **开发效率** | 高 (编译快) | 中 (借用检查) |
-| **运行时性能** | 95-101% Redis | 预期 85-95% Redis |
+
 
 ### Go 版独有
 
