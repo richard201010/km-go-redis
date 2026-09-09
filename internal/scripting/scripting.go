@@ -182,7 +182,7 @@ func (s *Scripting) setupRedisAPI(L *lua.LState, keys, args []string) {
 		if s.executor != nil {
 			result, isErr := s.executor(cmd, cmdArgs)
 			if isErr {
-				L.RaiseError(result)
+				L.RaiseError("%s", result)
 				return 0
 			}
 			L.Push(lua.LString(result))

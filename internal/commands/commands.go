@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/km-dev/km-go-redis/internal/db"
@@ -33,6 +34,52 @@ type CommandContext struct {
 	DB      *db.DB
 	DBIndex int
 	Server  ServerInterface
+}
+
+// --- CommandContext Pool (P1) ---
+// Pool for reusing CommandContext objects to reduce GC pressure on hot path.
+
+var ctxPool = sync.Pool{
+	New: func() interface{} {
+		return &CommandContext{}
+	},
+}
+
+// GetCommandContext returns a pooled CommandContext. Caller must call PutCommandContext when done.
+func GetCommandContext() *CommandContext {
+	return ctxPool.Get().(*CommandContext)
+}
+
+// PutCommandContext resets and returns a CommandContext to the pool.
+func PutCommandContext(ctx *CommandContext) {
+	if ctx == nil {
+		return
+	}
+	// Reset all fields to zero values to avoid retaining references.
+	*ctx = CommandContext{}
+	ctxPool.Put(ctx)
+}
+
+// --- Fast command lookup key ---
+// cmdKey is a fixed-size representation of a lowercased command name (max 15 bytes).
+// Used for O(1) map lookup without string allocation on the hot path.
+type cmdKey [16]byte // [0]=len, [1..15]=lowercase name bytes
+
+func makeCmdKey(name string) cmdKey {
+	var k cmdKey
+	n := len(name)
+	if n > 15 {
+		n = 15
+	}
+	k[0] = byte(n)
+	for i := 0; i < n; i++ {
+		c := name[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		k[i+1] = c
+	}
+	return k
 }
 
 // ClientInterface abstracts client operations for command handlers.
@@ -99,12 +146,14 @@ const (
 // CommandTable 保存所有已注册命令.
 type CommandTable struct {
 	commands map[string]*Command
+	fast     map[cmdKey]*Command // fast lookup by [16]byte key (P0 optimization)
 }
 
 // NewCommandTable creates a new command table with all Redis 8.10 commands.
 func NewCommandTable() *CommandTable {
 	ct := &CommandTable{
 		commands: make(map[string]*Command),
+		fast:     make(map[cmdKey]*Command),
 	}
 	ct.registerAll()
 	return ct
@@ -116,9 +165,18 @@ func (ct *CommandTable) Lookup(name string) *Command {
 	return ct.commands[name]
 }
 
+// LookupLower 按已转小写的名称查找命令 (P0 fast path).
+// Caller must ensure name is already lowercase. Uses [16]byte key for
+// zero-allocation map lookup.
+func (ct *CommandTable) LookupLower(name string) *Command {
+	return ct.fast[makeCmdKey(name)]
+}
+
 // Register 向表中添加命令.
 func (ct *CommandTable) Register(cmd *Command) {
-	ct.commands[strings.ToLower(cmd.Name)] = cmd
+	lower := strings.ToLower(cmd.Name)
+	ct.commands[lower] = cmd
+	ct.fast[makeCmdKey(cmd.Name)] = cmd
 }
 
 // Count returns the number of registered commands.

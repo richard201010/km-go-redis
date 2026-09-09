@@ -163,3 +163,35 @@ func fnv32(key string) uint32 {
 	}
 	return h
 }
+
+// RangeFrom 从指定全局游标开始遍历 (用于增量过期扫描).
+// cursor 是全局游标，会映射到具体的 shard 和 shard 内偏移。
+func (cm *ConcurrentMap) RangeFrom(cursor int, fn func(key string, value interface{}) bool) {
+	totalShards := shardCount
+	if totalShards == 0 {
+		return
+	}
+	// 计算起始 shard 和 shard 内偏移
+	startShard := cursor % totalShards
+	offset := cursor / totalShards
+
+	scanned := 0
+	for i := 0; i < totalShards; i++ {
+		shardIdx := (startShard + i) % totalShards
+		s := cm.shards[shardIdx]
+		s.mu.RLock()
+		idx := 0
+		for k, v := range s.data {
+			if idx >= offset || i > 0 {
+				scanned++
+				if !fn(k, v) {
+					s.mu.RUnlock()
+					return
+				}
+			}
+			idx++
+		}
+		s.mu.RUnlock()
+		offset = 0 // 只在第一个 shard 使用 offset
+	}
+}

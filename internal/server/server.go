@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/km-dev/km-go-redis/internal/commands"
 	"github.com/km-dev/km-go-redis/internal/config"
@@ -307,13 +308,17 @@ func (s *Server) processClient(client *networking.Client) {
 }
 
 // respToArgs converts a RESP array (or inline) value into a string slice.
+// P1 zero-copy: uses unsafe to convert []byte→string without allocation
+// when the Bulk data is safe to alias (each RESP bulk string is a standalone allocation).
 func (s *Server) respToArgs(val resp.RESPValue) []string {
 	switch val.Type {
 	case resp.TypeArray:
 		args := make([]string, len(val.Array))
 		for i, item := range val.Array {
 			if item.Type == resp.TypeBulkString && item.Bulk != nil {
-				args[i] = string(item.Bulk)
+				// Zero-copy: Bulk is a standalone allocation from the RESP reader,
+				// safe to alias as string without copying.
+				args[i] = unsafeString(item.Bulk)
 			} else if item.Type == resp.TypeSimpleString {
 				args[i] = item.Str
 			}
@@ -321,7 +326,7 @@ func (s *Server) respToArgs(val resp.RESPValue) []string {
 		return args
 	case resp.TypeBulkString:
 		if val.Bulk != nil {
-			return strings.Fields(string(val.Bulk))
+			return strings.Fields(unsafeString(val.Bulk))
 		}
 	case resp.TypeSimpleString:
 		return strings.Fields(val.Str)
@@ -329,11 +334,33 @@ func (s *Server) respToArgs(val resp.RESPValue) []string {
 	return nil
 }
 
+// unsafeString converts a byte slice to string without copying.
+// Safe only when the caller guarantees the byte slice won't be modified
+// after the returned string is used. In RESP parsing, each bulk string
+// is allocated independently, so this is safe for command args.
+func unsafeString(b []byte) string {
+	return *(*string)(unsafe.Pointer(&b))
+}
+
 // processCommand 实现 Redis's processCommand flow:
 // AUTH check → command lookup → MULTI/EXEC queueing → execute.
 // Returns false if the client should be disconnected.
 func (s *Server) processCommand(client *networking.Client, args []string) bool {
-	cmdName := strings.ToLower(args[0])
+	// P0 fast dispatch: lowercase into stack buffer, then use [16]byte map key.
+	// Avoids strings.ToLower heap allocation on every command.
+	var cmdBuf [32]byte
+	cmdLen := len(args[0])
+	if cmdLen > 31 {
+		cmdLen = 31
+	}
+	for i := 0; i < cmdLen; i++ {
+		c := args[0][i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		cmdBuf[i] = c
+	}
+	cmdName := string(cmdBuf[:cmdLen])
 
 	// AUTH is always allowed (even when not authenticated)
 	if cmdName != "auth" && cmdName != "hello" && cmdName != "quit" {
@@ -349,8 +376,8 @@ func (s *Server) processCommand(client *networking.Client, args []string) bool {
 		return false
 	}
 
-	// Look up command in table
-	cmd := s.CmdTable.Lookup(cmdName)
+	// Look up command in table via fast [16]byte key path
+	cmd := s.CmdTable.LookupLower(cmdName)
 	if cmd == nil {
 		client.SendError(fmt.Sprintf("ERR unknown command '%s', with args beginning with: %s", args[0], strings.Join(args[1:], " ")))
 		return true
@@ -391,18 +418,26 @@ func (s *Server) processCommand(client *networking.Client, args []string) bool {
 		return false
 	}
 
-	// Execute the command
-	ctx := &commands.CommandContext{
-		Client:  client,
-		Args:    args,
-		Command: cmd,
-		DB:      client.Database,
-		DBIndex: client.DBIndex,
-		Server:  s,
-	}
+	// Execute the command — P1 pool: reuse CommandContext from sync.Pool
+	ctx := commands.GetCommandContext()
+	ctx.Client = client
+	ctx.Args = args
+	ctx.Command = cmd
+	ctx.DB = client.Database
+	ctx.DBIndex = client.DBIndex
+	ctx.Server = s
 
 	cmd.Handler(ctx)
 	client.LastCmd = cmd
+
+	// Return context to pool after handler completes
+	commands.PutCommandContext(ctx)
+
+	// P0 Flush optimization: single flush per command instead of per Send call.
+	// All writes above went into bufio.Writer's 128KB buffer; flush once here.
+	if err := client.Writer.Flush(); err != nil {
+		return false // connection error — stop processing
+	}
 
 	// If command was MULTI, mark the client as in transaction
 	if cmdName == "multi" {

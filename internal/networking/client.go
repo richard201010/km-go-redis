@@ -145,106 +145,74 @@ func (c *Client) Close() {
 	}
 }
 
+// Flush flushes the buffered writer to the network connection.
+// Must be called after all Send* calls for a single command are done.
+func (c *Client) Flush() error {
+	return c.Writer.Flush()
+}
+
 // SendReply 发送 RESP 值 to the client.
 func (c *Client) SendReply(v resp.RESPValue) error {
 	c.mu.Lock()
-	if err := c.Writer.WriteValue(v); err != nil {
-		c.mu.Unlock()
-		return err
-	}
-	err := c.Writer.Flush()
-	c.mu.Unlock()
-	return err
+	defer c.mu.Unlock()
+	return c.Writer.WriteValue(v)
 }
 
 // SendBulkString 发送批量字符串 reply (optimized, no alloc).
 func (c *Client) SendBulkString(s string) error {
 	c.mu.Lock()
-	if err := c.Writer.WriteBulkStr(s); err != nil {
-		c.mu.Unlock()
-		return err
-	}
-	err := c.Writer.Flush()
-	c.mu.Unlock()
-	return err
+	defer c.mu.Unlock()
+	return c.Writer.WriteBulkStr(s)
 }
 
 // SendInteger 发送整数 reply (optimized, cached for 0-9999).
 func (c *Client) SendInteger(n int64) error {
 	c.mu.Lock()
-	if err := c.Writer.WriteInt(n); err != nil {
-		c.mu.Unlock()
-		return err
-	}
-	err := c.Writer.Flush()
-	c.mu.Unlock()
-	return err
+	defer c.mu.Unlock()
+	return c.Writer.WriteInt(n)
 }
 
 // SendSimpleString 发送简单字符串 reply.
 func (c *Client) SendSimpleString(s string) error {
 	c.mu.Lock()
-	if err := c.Writer.WriteValue(resp.RESPValue{Type: '+', Str: s}); err != nil {
-		c.mu.Unlock()
-		return err
-	}
-	err := c.Writer.Flush()
-	c.mu.Unlock()
-	return err
+	defer c.mu.Unlock()
+	return c.Writer.WriteValue(resp.RESPValue{Type: '+', Str: s})
 }
 
 // SendError 发送错误 reply.
 func (c *Client) SendError(msg string) error {
 	c.mu.Lock()
-	if err := c.Writer.WriteError(msg); err != nil {
-		c.mu.Unlock()
-		return err
-	}
-	err := c.Writer.Flush()
-	c.mu.Unlock()
-	return err
+	defer c.mu.Unlock()
+	return c.Writer.WriteError(msg)
 }
 
 // SendOK sends +OK\r\n (zero alloc).
 func (c *Client) SendOK() error {
 	c.mu.Lock()
-	if err := c.Writer.WriteOK(); err != nil {
-		c.mu.Unlock()
-		return err
-	}
-	err := c.Writer.Flush()
-	c.mu.Unlock()
-	return err
+	defer c.mu.Unlock()
+	return c.Writer.WriteOK()
 }
 
 // SendNull sends $-1\r\n (zero alloc).
 func (c *Client) SendNull() error {
 	c.mu.Lock()
-	if err := c.Writer.WriteNull(); err != nil {
-		c.mu.Unlock()
-		return err
-	}
-	err := c.Writer.Flush()
-	c.mu.Unlock()
-	return err
+	defer c.mu.Unlock()
+	return c.Writer.WriteNull()
 }
 
 // SendArray 发送数组回复.
 func (c *Client) SendArray(items []resp.RESPValue) error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if err := c.Writer.WriteArrayHeader(len(items)); err != nil {
-		c.mu.Unlock()
 		return err
 	}
 	for i := range items {
 		if err := c.Writer.WriteValue(items[i]); err != nil {
-			c.mu.Unlock()
 			return err
 		}
 	}
-	err := c.Writer.Flush()
-	c.mu.Unlock()
-	return err
+	return nil
 }
 
 // SendNil sends *-1\r\n (zero alloc).

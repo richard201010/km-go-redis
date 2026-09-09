@@ -26,6 +26,7 @@ type DB struct {
 	Expires   *ConcurrentMap // key -> time.Time
 	AvgTTL    int64
 	stats     DBStats
+	expireCursor int // 增量过期游标 (Redis-style)
 }
 
 // DBStats tracks per-database statistics.
@@ -343,26 +344,36 @@ func (db *DB) ExpireIfNeeded(key string) bool {
 }
 
 // ActiveExpireCycle 执行主动过期 (matching Redis's activeExpireCycle).
-// This should be called periodically to clean up expired keys.
+// 使用增量游标扫描，避免每次全量扫描 Expires map.
+// 每次调用只扫描 sampleSize*10 个 key，从上次游标位置继续。
 func (db *DB) ActiveExpireCycle(sampleSize int) int {
 	if sampleSize <= 0 {
 		sampleSize = 20
 	}
+	now := time.Now()
 	expired := 0
-	var keys []string
-	db.Expires.Range(func(key string, _ interface{}) bool {
-		keys = append(keys, key)
-		return len(keys) < sampleSize*10
-	})
-	for _, key := range keys {
-		if db.isExpired(key) {
+	scanned := 0
+	maxScan := sampleSize * 10
+
+	// 使用 RangeFrom 游标增量扫描 (类似 Redis 的 expireScanCursor)
+	db.Expires.RangeFrom(db.expireCursor, func(key string, value interface{}) bool {
+		scanned++
+		// 更新游标
+		db.expireCursor++
+
+		// 检查是否过期
+		expireAt := value.(time.Time)
+		if now.After(expireAt) {
 			db.deleteKey(key)
+			db.Expires.Delete(key)
 			expired++
 			if expired >= sampleSize {
-				break
+				return false // 达到采样上限
 			}
 		}
-	}
+		return scanned < maxScan
+	})
+
 	return expired
 }
 
