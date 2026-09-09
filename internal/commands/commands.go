@@ -410,6 +410,69 @@ func (ct *CommandTable) registerAll() {
 	ct.Register(&Command{Name: "failover", Handler: failoverCommand, Arity: -1, Flags: CmdAdmin})
 	ct.Register(&Command{Name: "replicaof", Handler: replicaofCommand, Arity: 3, Flags: CmdAdmin | CmdNoAuth})
 	ct.Register(&Command{Name: "replconf", Handler: replconfCommand, Arity: -1, Flags: CmdAdmin | CmdNoAuth})
+
+	// ============================================================
+	// 扩展命令 (补全 Rust 版缺失)
+	// ============================================================
+
+	// AR* 命令 (Array 类型扩展)
+	ct.Register(&Command{Name: "arcount", Handler: arcountCommand, Arity: 3, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "ardel", Handler: ardelCommand, Arity: -3, Flags: CmdWrite})
+	ct.Register(&Command{Name: "ardelrange", Handler: ardelrangeCommand, Arity: 5, Flags: CmdWrite})
+	ct.Register(&Command{Name: "arget", Handler: argetCommand, Arity: 4, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "argetrange", Handler: argetrangeCommand, Arity: 5, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "argrep", Handler: argrepCommand, Arity: 5, Flags: CmdWrite})
+	ct.Register(&Command{Name: "arinfo", Handler: arinfoCommand, Arity: 2, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "arinsert", Handler: arinsertCommand, Arity: -5, Flags: CmdWrite})
+	ct.Register(&Command{Name: "arlastitems", Handler: arlastitemsCommand, Arity: -3, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "arlen", Handler: arlenCommand, Arity: 2, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "armget", Handler: armgetCommand, Arity: -3, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "armset", Handler: armsetCommand, Arity: -3, Flags: CmdWrite})
+	ct.Register(&Command{Name: "arnext", Handler: arnextCommand, Arity: 2, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "arop", Handler: aropCommand, Arity: -3, Flags: CmdWrite})
+	ct.Register(&Command{Name: "arring", Handler: arringCommand, Arity: -3, Flags: CmdWrite})
+	ct.Register(&Command{Name: "arscan", Handler: arscanCommand, Arity: -3, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "arseek", Handler: arseekCommand, Arity: 3, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "arset", Handler: arsetCommand, Arity: -3, Flags: CmdWrite})
+
+	// List 扩展
+	ct.Register(&Command{Name: "lmovem", Handler: lmovemCommand, Arity: 6, Flags: CmdWrite | CmdDenyOOM})
+	ct.Register(&Command{Name: "blmovem", Handler: blmovemCommand, Arity: 6, Flags: CmdWrite | CmdDenyOOM | CmdNoScript})
+	ct.Register(&Command{Name: "brpoplpush", Handler: brpoplpushCommand, Arity: 4, Flags: CmdWrite | CmdDenyOOM | CmdNoScript})
+
+	// Hash 扩展
+	ct.Register(&Command{Name: "himport", Handler: himportCommand, Arity: -3, Flags: CmdWrite})
+	ct.Register(&Command{Name: "pexpiretime", Handler: pexpiretimeCommand, Arity: 2, Flags: CmdReadonly | CmdFast})
+
+	// String 扩展
+	ct.Register(&Command{Name: "increx", Handler: increxCommand, Arity: -3, Flags: CmdWrite | CmdDenyOOM})
+
+	// Function/Rcall (Redis 7+)
+	ct.Register(&Command{Name: "fcall", Handler: fcallCommand, Arity: -3, Flags: CmdWrite | CmdMayReplicate})
+	ct.Register(&Command{Name: "fcall_ro", Handler: fcallroCommand, Arity: -3, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "function", Handler: functionCommand, Arity: -2, Flags: CmdAdmin | CmdNoScript})
+
+	// Replication
+	ct.Register(&Command{Name: "psync", Handler: psyncCommand, Arity: 3, Flags: CmdAdmin})
+	ct.Register(&Command{Name: "slaveof", Handler: slaveofCommand, Arity: 3, Flags: CmdAdmin | CmdNoAuth})
+
+	// Key 扩展
+	ct.Register(&Command{Name: "keyslot", Handler: keyslotCommand, Arity: 2, Flags: CmdReadonly | CmdFast})
+
+	// Server 扩展
+	ct.Register(&Command{Name: "sflush", Handler: sflushCommand, Arity: 2, Flags: CmdWrite})
+	ct.Register(&Command{Name: "backup", Handler: backupCommand, Arity: -2, Flags: CmdAdmin})
+	ct.Register(&Command{Name: "unload", Handler: unloadCommand, Arity: 2, Flags: CmdAdmin})
+
+	// ZSet 扩展
+	ct.Register(&Command{Name: "zrangestore", Handler: zrangestoreCommand, Arity: -5, Flags: CmdWrite})
+
+	// Stream 扩展
+	ct.Register(&Command{Name: "xackdel", Handler: xackdelCommand, Arity: -4, Flags: CmdWrite})
+	ct.Register(&Command{Name: "xcfgset", Handler: xcfgsetCommand, Arity: -3, Flags: CmdWrite})
+	ct.Register(&Command{Name: "xdelex", Handler: xdelexCommand, Arity: -3, Flags: CmdWrite})
+	ct.Register(&Command{Name: "xidmprecord", Handler: xidmprecordCommand, Arity: 2, Flags: CmdReadonly})
+	ct.Register(&Command{Name: "xnack", Handler: xnackCommand, Arity: -4, Flags: CmdWrite})
 }
 
 // --- Command Handlers ---
