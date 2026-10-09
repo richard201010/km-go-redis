@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">km-go-redis</h1>
   <p align="center">
-    <strong>高性能纯 Go 语言 Redis 8.10 复刻版</strong>
+    <strong>高性能纯 Go 语言 Redis 8.10  </strong>
   </p>
   <p align="center">
     <a href="#-性能表现">性能</a> •
